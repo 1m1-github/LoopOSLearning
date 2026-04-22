@@ -41,9 +41,6 @@ end
 
 pkgdir(name) = joinpath(JULIACODEPATH, name)
 
-name="LoopOSLearning"
-files=[joinpath(ENV["HOME"], ".julia", "devbak", "LoopOSLearning", "src", "LoopOSLearning.jl")]
-pkgs=String["Pkg", "TOML", "LocalRegistry"]
 """
 pkgs: Pkgs to be added (via name, url, path).
 files: Files to be copied over.
@@ -79,16 +76,16 @@ function addfile(name, file, content)
     file = joinpath(pkgdir(name), file)
     !isfile(file) && write(file, content)
 end
-srcfile(file) = joinpath(pkgdir(name), "src", basename(file))
+srcfile(name, file) = joinpath(pkgdir(name), "src", basename(file))
 function changefiles(name, files, rmfiles)
     addfile(name, LICENSEFILE, LICENSE)
     addfile(name, GITIGNOREFILE, GITIGNORE)
     addfile(name, READMEFILE, README(name))
     for file = files
-        cp(file, srcfile(file), force=true)
+        cp(file, srcfile(name, file), force=true)
     end
     for file = rmfiles
-        rm(srcfile(file))
+        rm(srcfile(name, file))
     end
 end
 
@@ -169,7 +166,7 @@ updateversion() = changeversion(v -> VersionNumber(v.major + 1))
 
 remoteurl(name, githubuser) = """git@github.com:$githubuser/$name.git"""
 hasremote(name) = cd(pkgdir(name)) do
-        isempty(readlines(`git remote`))
+        !isempty(readlines(`git remote`))
     end
 addsetremote(name, githubuser, addset) =
     cd(pkgdir(name)) do
