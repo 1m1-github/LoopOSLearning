@@ -82,7 +82,7 @@ function changefiles(name, files, rmfiles)
     addfile(name, GITIGNOREFILE, GITIGNORE)
     addfile(name, READMEFILE, README(name))
     for file = files
-        cp(file, srcfile(name, file), force=true)
+        mv(file, srcfile(name, file), force=true)
     end
     for file = rmfiles
         rm(srcfile(name, file))
