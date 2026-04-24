@@ -116,6 +116,7 @@ end
 
 function changepkgs(name, pkgs, rmpkgs)
     cd(pkgdir(name)) do
+        oldenv = Base.active_project()
         Pkg.activate(".")
         for pkg = pkgs
             changepkg(pkg, Pkg.add)
@@ -124,8 +125,8 @@ function changepkgs(name, pkgs, rmpkgs)
         for pkg = rmpkgs
             changepkg(pkg, Pkg.rm)
         end
+        Pkg.activate(oldenv)
     end
-    Pkg.activate(".")
 end
 
 function commitpkg(name)

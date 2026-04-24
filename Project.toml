@@ -1,6 +1,6 @@
 name = "LoopOSLearning"
 uuid = "5dc6656b-7891-47f1-89e8-5cb280c7ea48"
-version = "6.0.0"
+version = "7.0.0"
 authors = ["1m1 <imi@1m1.io>"]
 
 [deps]
