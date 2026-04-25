@@ -54,11 +54,6 @@ function newpkg(; name::String, files::Vector{String}, pkgs::Vector{String}=Stri
     newrepo(name, githubuser, githubauth)
     registerpkg(name, pushregistry)
 end
-newpkg(; name::String, code::String, pkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", "")
-) = newpkg(; name=name, [begin
-    write("$name.jl", code)
-    "$name.jl"
-end], pkgs=pkgs, pushregistry=pushregistry, githubuser=githubuser, githubauth=githubauth)
 
 """
 pkgs: new Pkgs to be added
@@ -77,16 +72,11 @@ function updatepkg(; name::String, files::Vector{String}=String[], pkgs::Vector{
     end
     registerpkg(name, pushregistry)
 end
-updatepkg(; name::String, files::Vector{String}=String[], pkgs::Vector{String}=String[], rmfiles::Vector{String}=String[], rmpkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", "")
-) = updatepkg(; name=name, [open("$name.jl", "w") do io
-        print(io, "code")
-        name
-    end], pkgs=pkgs, rmfiles=rmfiles, rmpkgs=rmpkgs, pushregistry=pushregistry, githubuser=githubuser, githubauth=githubauth)
 
 function rmpkg(; name::String)
     projectfile = TOML.parsefile(PROJECTFILE)
     delete!(projectfile, name)
-    open(joinpath(LOOPOSREGISTRYPATH, PROJECTFILENAME), "w") do io
+    open(PROJECTFILE, "w") do io
         TOML.print(io, projectfile)
     end
     rm(joinpath(LOOPOSREGISTRYPATH, name), recursive=true)
