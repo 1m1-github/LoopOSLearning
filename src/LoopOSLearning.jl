@@ -6,7 +6,7 @@ module LoopOSLearning
 
 # todo handle fails
 
-export newpkg, updatepkg, rmpkg
+export newpkg, updatepkg, cppkg, mvpkg, rmpkg
 
 using Pkg, TOML, LocalRegistry, GitHub
 using Pkg.Types: PackageSpec, Context
@@ -18,7 +18,6 @@ const LOOPOSREGISTRYPATH = joinpath(DEPOT_PATH[1], "registries", LOOPOSREGISTRY)
 const LOOPOSREGISTRYURL = "https://github.com/1m1-github/LoopOSRegistry.git"
 const JULIACODEPATH = joinpath(DEPOT_PATH[1], "dev")
 const PROJECTFILENAME = "Project.toml"
-const PROJECTFILE = joinpath(LOOPOSREGISTRYPATH, PROJECTFILENAME)
 const LICENSEFILE = "LICENSE"
 const LICENSE = """
 Study it, use it, enjoy it.
@@ -41,16 +40,21 @@ end
 !isdir(JULIACODEPATH) && run(`mkdir $JULIACODEPATH`)
 
 pkgdir(name) = joinpath(JULIACODEPATH, name)
+projectfilepath(name) = joinpath(pkgdir(name), PROJECTFILENAME)
+projectfilepath() = joinpath(LOOPOSREGISTRYPATH, PROJECTFILENAME)
+
+gitC(name) = "git -C $(pkgname(name))"
 
 """
 pkgs: Pkgs to be added (via name, url, path).
 files: Files to be copied over.
 """
-function newpkg(; name::String, files::Vector{String}, pkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""))
+function newpkg(; name::String, files::Vector{String}, pkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""), mvfiles=false)
     Pkg.generate(pkgdir(name)) # todo cleanup on error
-    changefiles(name, files, [])
+    changefiles(name, files, [], mvfiles ? mv : cp)
     changepkgs(name, pkgs, [])
-    commitpkg(name)
+    initversion(name)
+    newcommit(name)
     newrepo(name, githubuser, githubauth)
     registerpkg(name, pushregistry)
 end
@@ -61,10 +65,11 @@ rmpkgs: Pkgs to be removed
 files: Files to be copied over
 rmfiles: Files to be removed
 """
-function updatepkg(; name::String, files::Vector{String}=String[], pkgs::Vector{String}=String[], rmfiles::Vector{String}=String[], rmpkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""))
-    changefiles(name, files, rmfiles)
+function updatepkg(; name::String, files::Vector{String}=String[], pkgs::Vector{String}=String[], rmfiles::Vector{String}=String[], rmpkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""), mvfiles=false)
+    changefiles(name, files, rmfiles, mvfiles ? mv : cp)
     changepkgs(name, pkgs, rmpkgs)
-    commitpkg(name)
+    updateversion(name)
+    commit(name)
     if hasremote(name)
         updateremote(name)
     else
@@ -74,13 +79,23 @@ function updatepkg(; name::String, files::Vector{String}=String[], pkgs::Vector{
 end
 
 function rmpkg(; name::String)
-    projectfile = TOML.parsefile(PROJECTFILE)
+    projectfile = TOML.parsefile(projectfilepath())
     delete!(projectfile, name)
-    open(PROJECTFILE, "w") do io
+    open(projectfilepath(), "w") do io
         TOML.print(io, projectfile)
     end
     rm(joinpath(LOOPOSREGISTRYPATH, name), recursive=true)
     rm(joinpath(JULIACODEPATH, name), recursive=true)
+end
+function cppkg(; name::String, newname::String, pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""))
+    files = readdir(joinpath(pkgdir(name), "src"))
+    projectfile = TOML.parsefile(projectfilepath(name))
+    pkgs = collect(keys(projectfile["deps"]))
+    newpkg(name=newname, files=files, pkgs=pkgs, pushregistry=pushregistry, githubuser=githubuser, githubauth=githubauth)
+end
+function mvpkg(; name::String, newname::String, pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""))
+    cppkg(name=name, newname=newname, pushregistry=pushregistry, githubuser=githubuser, githubauth=githubauth)
+    rmpkg(name=name)
 end
 
 function addfile(name, file, content)
@@ -88,12 +103,12 @@ function addfile(name, file, content)
     !isfile(file) && write(file, content)
 end
 srcfile(name, file) = joinpath(pkgdir(name), "src", basename(file))
-function changefiles(name, files, rmfiles)
+function changefiles(name, files, rmfiles, cpmv)
     addfile(name, LICENSEFILE, LICENSE)
     addfile(name, GITIGNOREFILE, GITIGNORE)
     addfile(name, READMEFILE, README(name))
     for file = files
-        mv(file, srcfile(name, file), force=true)
+        cpmv(file, srcfile(name, file), force=true)
     end
     for file = rmfiles
         rm(srcfile(name, file))
@@ -140,19 +155,13 @@ function changepkgs(name, pkgs, rmpkgs)
     end
 end
 
-function commitpkg(name)
-    cd(pkgdir(name)) do
-        commitmessage = if isdir(".git")
-            updateversion()
-            "update"
-        else
-            run(`git init`)
-            initversion()
-            "."
-        end
-        run(`git add .`)
-        run(`git commit -m $commitmessage`)
-    end
+function newcommit(name)
+    run(`$(gitC(name)) init`)
+    commit(name)
+end
+function commit(name)
+    run(`$(gitC(name)) add .`)
+    run(`$(gitC(name)) commit -m .`)
 end
 
 function registerpkg(name, push=false)
@@ -164,33 +173,25 @@ function registerpkg(name, push=false)
     )
 end
 
-function changeversion(newversion)
-    projectfile = TOML.parsefile(PROJECTFILENAME)
+function changeversion(name, newversion)
+    path = projectfilepath(name)
+    projectfile = TOML.parsefile(path)
     version = VersionNumber(projectfile["version"])
     projectfile["version"] = string(newversion(version))
-    open(PROJECTFILENAME, "w") do file
+    open(path, "w") do file
         TOML.print(file, projectfile)
     end
     projectfile["version"]
 end
-initversion() = changeversion(_ -> v"1")
-updateversion() = changeversion(v -> VersionNumber(v.major + 1))
+initversion(name) = changeversion(name, _ -> v"1")
+updateversion(name) = changeversion(name, v -> VersionNumber(v.major + 1))
 
 remoteurl(name, githubuser) = """git@github.com:$githubuser/$name.git"""
-hasremote(name) =
-    cd(pkgdir(name)) do
-        !isempty(readlines(`git remote`))
-    end
-addsetremote(name, githubuser, addset) =
-    cd(pkgdir(name)) do
-        run(`git remote $addset origin $(remoteurl(name, githubuser))`)
-    end
+hasremote(name) = !isempty(readlines(`$(gitC(name)) remote`))
+addsetremote(name, githubuser, addset) = run(`$(gitC(name)) remote $addset origin $(remoteurl(name, githubuser))`)
 addremote(name, githubuser) = addsetremote(name, githubuser, "add")
 setremote(name, githubuser) = addsetremote(name, githubuser, "set-url")
-updateremote(name) =
-    cd(pkgdir(name)) do
-        run(`git push -f -u origin main`)
-    end
+updateremote(name) = run(`$(gitC(name)) push -f -u origin main`)
 function newrepo(name, githubuser, githubauth)
     if !isempty(githubuser) && !isempty(githubauth)
         create_repo(
