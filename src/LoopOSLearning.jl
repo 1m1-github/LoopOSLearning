@@ -6,7 +6,7 @@ module LoopOSLearning
 
 # todo handle fails
 
-export newpkg, updatepkg
+export newpkg, updatepkg, rmpkg
 
 using Pkg, TOML, LocalRegistry, GitHub
 using Pkg.Types: PackageSpec, Context
@@ -17,7 +17,8 @@ const LOOPOSREGISTRY = "LoopOSRegistry"
 const LOOPOSREGISTRYPATH = joinpath(DEPOT_PATH[1], "registries", LOOPOSREGISTRY)
 const LOOPOSREGISTRYURL = "https://github.com/1m1-github/LoopOSRegistry.git"
 const JULIACODEPATH = joinpath(DEPOT_PATH[1], "dev")
-const PROJECTFILE = "Project.toml"
+const PROJECTFILENAME = "Project.toml"
+const PROJECTFILE = joinpath(LOOPOSREGISTRYPATH, PROJECTFILENAME)
 const LICENSEFILE = "LICENSE"
 const LICENSE = """
 Study it, use it, enjoy it.
@@ -46,13 +47,18 @@ pkgs: Pkgs to be added (via name, url, path).
 files: Files to be copied over.
 """
 function newpkg(; name::String, files::Vector{String}, pkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""))
-    Pkg.generate(pkgdir(name))
+    Pkg.generate(pkgdir(name)) # todo cleanup on error
     changefiles(name, files, [])
     changepkgs(name, pkgs, [])
     commitpkg(name)
     newrepo(name, githubuser, githubauth)
     registerpkg(name, pushregistry)
 end
+newpkg(; name::String, code::String, pkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", "")
+) = newpkg(; name=name, [begin
+    write("$name.jl", code)
+    "$name.jl"
+end], pkgs=pkgs, pushregistry=pushregistry, githubuser=githubuser, githubauth=githubauth)
 
 """
 pkgs: new Pkgs to be added
@@ -70,6 +76,21 @@ function updatepkg(; name::String, files::Vector{String}=String[], pkgs::Vector{
         newrepo(name, githubuser, githubauth)
     end
     registerpkg(name, pushregistry)
+end
+updatepkg(; name::String, files::Vector{String}=String[], pkgs::Vector{String}=String[], rmfiles::Vector{String}=String[], rmpkgs::Vector{String}=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", "")
+) = updatepkg(; name=name, [open("$name.jl", "w") do io
+        print(io, "code")
+        name
+    end], pkgs=pkgs, rmfiles=rmfiles, rmpkgs=rmpkgs, pushregistry=pushregistry, githubuser=githubuser, githubauth=githubauth)
+
+function rmpkg(; name::String)
+    projectfile = TOML.parsefile(PROJECTFILE)
+    delete!(projectfile, name)
+    open(joinpath(LOOPOSREGISTRYPATH, PROJECTFILENAME), "w") do io
+        TOML.print(io, projectfile)
+    end
+    rm(joinpath(LOOPOSREGISTRYPATH, name), recursive=true)
+    rm(joinpath(JULIACODEPATH, name), recursive=true)
 end
 
 function addfile(name, file, content)
@@ -154,10 +175,10 @@ function registerpkg(name, push=false)
 end
 
 function changeversion(newversion)
-    projectfile = TOML.parsefile(PROJECTFILE)
+    projectfile = TOML.parsefile(PROJECTFILENAME)
     version = VersionNumber(projectfile["version"])
     projectfile["version"] = string(newversion(version))
-    open(PROJECTFILE, "w") do file
+    open(PROJECTFILENAME, "w") do file
         TOML.print(file, projectfile)
     end
     projectfile["version"]
@@ -166,7 +187,8 @@ initversion() = changeversion(_ -> v"1")
 updateversion() = changeversion(v -> VersionNumber(v.major + 1))
 
 remoteurl(name, githubuser) = """git@github.com:$githubuser/$name.git"""
-hasremote(name) = cd(pkgdir(name)) do
+hasremote(name) =
+    cd(pkgdir(name)) do
         !isempty(readlines(`git remote`))
     end
 addsetremote(name, githubuser, addset) =
@@ -185,7 +207,7 @@ function newrepo(name, githubuser, githubauth)
             GitHub.owner(githubuser),
             name;
             auth=authenticate(githubauth),
-            )
+        )
         addremote(name, githubuser)
         updateremote(name)
     end
