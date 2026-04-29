@@ -55,6 +55,7 @@ files: Files to be copied over.
 """
 function newpkg(; name::String, files=String[], pkgs=String[], pushregistry=false, githubuser=get(ENV, "GITHUB_USER", ""), githubauth=get(ENV, "GITHUB_AUTH", ""), mvfiles=false)
     path = pkgdir(name)
+    @show path
     Pkg.generate(path) # todo cleanup on error
     changefiles(name, files, [], mvfiles ? mv : cp)
     changepkgs(name, pkgs, [])
@@ -218,13 +219,13 @@ function addcommitpush(path; new=false, push=false)
     end
 end
 function newrepo(name, githubuser, githubauth)
+    !isempty(githubuser) && addremote(name, githubuser)
     if !isempty(githubuser) && !isempty(githubauth)
         create_repo(
             GitHub.owner(githubuser),
             name,
             auth=authenticate(githubauth),
         )
-        addremote(name, githubuser)
         updateremote(pkgdir(name))
     end
 end
